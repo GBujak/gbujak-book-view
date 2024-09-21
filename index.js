@@ -116,10 +116,13 @@ function createBookView(_a) {
         }
     }
     function overflowsParent(parent, child) {
+        console.log(child);
+        console.log(parent);
+        console.log(child.offsetLeft, parent.offsetLeft, child.offsetWidth, parent.offsetWidth, child.offsetLeft - parent.offsetLeft, parent.offsetWidth - child.offsetWidth);
         return (child.offsetTop - parent.offsetTop >
             parent.offsetHeight - child.offsetHeight ||
             child.offsetLeft - parent.offsetLeft >
-                parent.offsetWidth - child.offsetWidth);
+                parent.offsetWidth - child.offsetWidth + 100);
     }
     layoutContent();
     function containerClickHandler(event) {
@@ -161,9 +164,9 @@ function createBookView(_a) {
         clearColumnHtml();
         layoutContent();
     }
-    setInterval(function () {
-        doRelayoutCurrentPage();
-    }, 1000);
+    // setInterval(() => {
+    //   doRelayoutCurrentPage();
+    // }, 1000);
     return function () {
         bookDiv.remove();
         container.removeEventListener("click", containerClickHandler);

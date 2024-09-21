@@ -152,7 +152,7 @@ function createBookView({
       child.offsetTop - parent.offsetTop >
         parent.offsetHeight - child.offsetHeight ||
       child.offsetLeft - parent.offsetLeft >
-        parent.offsetWidth - child.offsetWidth
+        parent.offsetWidth - child.offsetWidth + 100
     );
   }
 
@@ -209,9 +209,9 @@ function createBookView({
     layoutContent();
   }
 
-  setInterval(() => {
-    doRelayoutCurrentPage();
-  }, 1000);
+  // setInterval(() => {
+  //   doRelayoutCurrentPage();
+  // }, 1000);
 
   return () => {
     bookDiv.remove();
