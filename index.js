@@ -64,9 +64,14 @@ var BookState = /** @class */ (function () {
 }());
 function createBookView(_a) {
     var containerId = _a.containerId, contentId = _a.contentId, height = _a.height, _b = _a.columns, columns = _b === void 0 ? 2 : _b, _c = _a.onNavigateOffFinalPage, onNavigateOffFinalPage = _c === void 0 ? function () { } : _c;
-    var columnDivs = [];
     var container = document.getElementById(containerId);
     var content = document.getElementById(contentId);
+    var bookDiv = document.createElement("div");
+    container.appendChild(bookDiv);
+    content.style.display = "none";
+    bookDiv.style.height = height;
+    bookDiv.style.columnCount = columns + "";
+    bookDiv.style.columnGap = "1rem";
     // const originalContentStyle = structuredClone(content.style);
     // const originalContainerStyle = structuredClone(container.style);
     if (container == null) {
@@ -86,54 +91,35 @@ function createBookView(_a) {
     })();
     var bookViewState = new BookState(columns, Array.from(content.children));
     console.log(Array.from(content.children));
-    for (var i = 0; i < columns; i++) {
-        var div = document.createElement("div");
-        columnDivs.push(div);
-        div.style.height = height;
-        container.appendChild(div);
-    }
-    container.style.display = "grid";
-    container.style.gap = "1rem";
-    container.style.gridTemplateColumns = "repeat(".concat(columns, ", 1fr)");
-    content.style.display = "none";
     function layoutContent() {
-        divLoop: for (var _i = 0, columnDivs_1 = columnDivs; _i < columnDivs_1.length; _i++) {
-            var div = columnDivs_1[_i];
-            var node = void 0;
-            while ((node = bookViewState.popNextNode()) != undefined) {
-                var clonedNode = node.cloneNode(true);
-                div.append(clonedNode);
-                if (overflowsParent(div, clonedNode)) {
-                    clonedNode.remove();
-                    bookViewState.unPopNextNode();
-                    continue divLoop;
-                }
+        var node;
+        while ((node = bookViewState.popNextNode()) != undefined) {
+            var clonedNode = node.cloneNode(true);
+            bookDiv.append(clonedNode);
+            if (overflowsParent(bookDiv, clonedNode)) {
+                clonedNode.remove();
+                bookViewState.unPopNextNode();
+                return;
             }
         }
     }
     function layoutContentBackwards() {
-        divLoop: for (var _i = 0, _a = reverse(columnDivs); _i < _a.length; _i++) {
-            var div = _a[_i];
-            var node = void 0;
-            while ((node = bookViewState.popNextNodeBackwards()) != undefined) {
-                var clonedNode = node.cloneNode(true);
-                div.insertBefore(clonedNode, div.firstChild);
-                if (overflowsParent(div, div.lastChild)) {
-                    clonedNode.remove();
-                    bookViewState.unPopNextNodeBackwards();
-                    continue divLoop;
-                }
+        var node;
+        while ((node = bookViewState.popNextNodeBackwards()) != undefined) {
+            var clonedNode = node.cloneNode(true);
+            bookDiv.insertBefore(clonedNode, bookDiv.firstChild);
+            if (overflowsParent(bookDiv, bookDiv.lastChild)) {
+                clonedNode.remove();
+                bookViewState.unPopNextNodeBackwards();
+                return;
             }
         }
     }
     function overflowsParent(parent, child) {
         return (child.offsetTop - parent.offsetTop >
-            parent.offsetHeight - child.offsetHeight);
-    }
-    function reverse(array) {
-        var tmp = __spreadArray([], array, true);
-        tmp.reverse();
-        return tmp;
+            parent.offsetHeight - child.offsetHeight ||
+            child.offsetLeft - parent.offsetLeft >
+                parent.offsetWidth - child.offsetWidth);
     }
     layoutContent();
     function containerClickHandler(event) {
@@ -150,10 +136,7 @@ function createBookView(_a) {
         }
     }
     function clearColumnHtml() {
-        for (var _i = 0, columnDivs_2 = columnDivs; _i < columnDivs_2.length; _i++) {
-            var column = columnDivs_2[_i];
-            column.innerHTML = "";
-        }
+        bookDiv.innerHTML = "";
     }
     function containerKeyboardHandler(event) { }
     container.addEventListener("click", containerClickHandler);
@@ -182,10 +165,7 @@ function createBookView(_a) {
         doRelayoutCurrentPage();
     }, 1000);
     return function () {
-        for (var _i = 0, columnDivs_3 = columnDivs; _i < columnDivs_3.length; _i++) {
-            var div = columnDivs_3[_i];
-            div.remove();
-        }
+        bookDiv.remove();
         container.removeEventListener("click", containerClickHandler);
         container.removeEventListener("keyup", containerKeyboardHandler);
     };

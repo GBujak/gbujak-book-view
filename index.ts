@@ -81,9 +81,17 @@ function createBookView({
   columns = 2,
   onNavigateOffFinalPage = () => {},
 }: Props) {
-  const columnDivs: HTMLDivElement[] = [];
   const container = document.getElementById(containerId);
   const content = document.getElementById(contentId);
+
+  const bookDiv = document.createElement("div");
+  container.appendChild(bookDiv);
+
+  content.style.display = "none";
+  bookDiv.style.height = height;
+  bookDiv.style.columnCount = columns + "";
+  bookDiv.style.columnGap = "1rem";
+
   // const originalContentStyle = structuredClone(content.style);
   // const originalContainerStyle = structuredClone(container.style);
 
@@ -111,46 +119,30 @@ function createBookView({
   const bookViewState = new BookState(columns, Array.from(content.children));
   console.log(Array.from(content.children));
 
-  for (let i = 0; i < columns; i++) {
-    const div = document.createElement("div");
-    columnDivs.push(div);
-    div.style.height = height;
-    container.appendChild(div);
-  }
-
-  container.style.display = "grid";
-  container.style.gap = "1rem";
-  container.style.gridTemplateColumns = `repeat(${columns}, 1fr)`;
-  content.style.display = "none";
-
   function layoutContent() {
-    divLoop: for (const div of columnDivs) {
-      let node: Node | undefined;
-      while ((node = bookViewState.popNextNode()) != undefined) {
-        const clonedNode = node.cloneNode(true) as HTMLElement;
-        div.append(clonedNode);
+    let node: Node | undefined;
+    while ((node = bookViewState.popNextNode()) != undefined) {
+      const clonedNode = node.cloneNode(true) as HTMLElement;
+      bookDiv.append(clonedNode);
 
-        if (overflowsParent(div, clonedNode)) {
-          clonedNode.remove();
-          bookViewState.unPopNextNode();
-          continue divLoop;
-        }
+      if (overflowsParent(bookDiv, clonedNode)) {
+        clonedNode.remove();
+        bookViewState.unPopNextNode();
+        return;
       }
     }
   }
 
   function layoutContentBackwards() {
-    divLoop: for (const div of reverse(columnDivs)) {
-      let node: Node | undefined;
-      while ((node = bookViewState.popNextNodeBackwards()) != undefined) {
-        const clonedNode = node.cloneNode(true) as HTMLElement;
-        div.insertBefore(clonedNode, div.firstChild);
+    let node: Node | undefined;
+    while ((node = bookViewState.popNextNodeBackwards()) != undefined) {
+      const clonedNode = node.cloneNode(true) as HTMLElement;
+      bookDiv.insertBefore(clonedNode, bookDiv.firstChild);
 
-        if (overflowsParent(div, div.lastChild as HTMLElement)) {
-          clonedNode.remove();
-          bookViewState.unPopNextNodeBackwards();
-          continue divLoop;
-        }
+      if (overflowsParent(bookDiv, bookDiv.lastChild as HTMLElement)) {
+        clonedNode.remove();
+        bookViewState.unPopNextNodeBackwards();
+        return;
       }
     }
   }
@@ -158,14 +150,10 @@ function createBookView({
   function overflowsParent(parent: HTMLElement, child: HTMLElement) {
     return (
       child.offsetTop - parent.offsetTop >
-      parent.offsetHeight - child.offsetHeight
+        parent.offsetHeight - child.offsetHeight ||
+      child.offsetLeft - parent.offsetLeft >
+        parent.offsetWidth - child.offsetWidth
     );
-  }
-
-  function reverse<T>(array: T[]): T[] {
-    const tmp = [...array];
-    tmp.reverse();
-    return tmp;
   }
 
   layoutContent();
@@ -189,9 +177,7 @@ function createBookView({
   }
 
   function clearColumnHtml() {
-    for (const column of columnDivs) {
-      column.innerHTML = "";
-    }
+    bookDiv.innerHTML = "";
   }
 
   function containerKeyboardHandler(event: KeyboardEvent) {}
@@ -228,10 +214,7 @@ function createBookView({
   }, 1000);
 
   return () => {
-    for (const div of columnDivs) {
-      div.remove();
-    }
-
+    bookDiv.remove();
     container.removeEventListener("click", containerClickHandler);
     container.removeEventListener("keyup", containerKeyboardHandler);
   };
