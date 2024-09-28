@@ -1,72 +1,66 @@
-var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
-    if (pack || arguments.length === 2) for (var i = 0, l = from.length, ar; i < l; i++) {
-        if (ar || !(i in from)) {
-            if (!ar) ar = Array.prototype.slice.call(from, 0, i);
-            ar[i] = from[i];
-        }
-    }
-    return to.concat(ar || Array.prototype.slice.call(from));
-};
-var BookState = /** @class */ (function () {
-    function BookState(columnCount, contentNodes, startOnNode) {
+class BookState {
+    constructor(contentNodes, startOnNode) {
         this.currentNodes = [];
         if (startOnNode == null) {
             this.pastNodes = [];
-            this.remainingNodes = contentNodes;
+            this.remainingNodes = contentNodes.map((node) => ({ node }));
         }
         else {
-            var indexOfStart = contentNodes.indexOf(startOnNode);
+            const indexOfStart = contentNodes.indexOf(startOnNode);
             if (indexOfStart === -1) {
                 throw Error("startOnNode not in contentNodes");
             }
-            this.pastNodes = contentNodes.slice(0, indexOfStart);
-            this.remainingNodes = contentNodes.slice(indexOfStart);
+            this.pastNodes = contentNodes.slice(0, indexOfStart).map((node) => ({ node }));
+            this.remainingNodes = contentNodes.slice(indexOfStart).map((node) => ({ node }));
         }
     }
-    BookState.prototype.popNextNode = function () {
-        var node = this.remainingNodes.shift();
+    popNextNode() {
+        const node = this.remainingNodes.shift();
         if (node != null) {
             this.currentNodes.push(node);
         }
-        return node;
-    };
-    BookState.prototype.unPopNextNode = function () {
+        return node === null || node === void 0 ? void 0 : node.node;
+    }
+    unPopNextNode() {
         this.remainingNodes.unshift(this.currentNodes.pop());
-    };
-    BookState.prototype.popNextNodeBackwards = function () {
-        var node = this.pastNodes.pop();
+    }
+    popNextNodeBackwards() {
+        const node = this.pastNodes.pop();
         if (node != null) {
             this.currentNodes.unshift(node);
         }
-        return node;
-    };
-    BookState.prototype.unPopNextNodeBackwards = function () {
+        return node === null || node === void 0 ? void 0 : node.node;
+    }
+    unPopNextNodeBackwards() {
         this.pastNodes.push(this.currentNodes.shift());
-    };
-    BookState.prototype.fistVisibleNode = function () {
-        return this.currentNodes[0];
-    };
-    BookState.prototype.turnPage = function () {
-        this.pastNodes = __spreadArray(__spreadArray([], this.pastNodes, true), this.currentNodes, true);
+    }
+    fistVisibleNode() {
+        return this.currentNodes[0].node;
+    }
+    turnPage() {
+        this.pastNodes = [...this.pastNodes, ...this.currentNodes];
         this.currentNodes = [];
-    };
-    BookState.prototype.turnPageBackwards = function () {
-        this.remainingNodes = __spreadArray(__spreadArray([], this.currentNodes, true), this.remainingNodes, true);
+    }
+    turnPageBackwards() {
+        this.remainingNodes = [...this.currentNodes, ...this.remainingNodes];
         this.currentNodes = [];
-    };
-    BookState.prototype.lastPage = function () {
+    }
+    lastPage() {
         return this.remainingNodes.length === 0;
-    };
-    BookState.prototype.firstPage = function () {
+    }
+    firstPage() {
         return this.pastNodes.length === 0;
-    };
-    return BookState;
-}());
-function createBookView(_a) {
-    var containerId = _a.containerId, contentId = _a.contentId, height = _a.height, _b = _a.columns, columns = _b === void 0 ? 2 : _b, _c = _a.onNavigateOffFinalPage, onNavigateOffFinalPage = _c === void 0 ? function () { } : _c;
-    var container = document.getElementById(containerId);
-    var content = document.getElementById(contentId);
-    var bookDiv = document.createElement("div");
+    }
+    addSplitNodeForward(toCurrent, toRemaining) {
+        this.currentNodes.push({ node: toCurrent });
+        this.remainingNodes.shift();
+        this.remainingNodes.unshift({ node: toRemaining });
+    }
+}
+function createBookView({ containerId, contentId, height, columns = 2, onNavigateOffFinalPage = () => { }, }) {
+    const container = document.getElementById(containerId);
+    const content = document.getElementById(contentId);
+    const bookDiv = document.createElement("div");
     container.appendChild(bookDiv);
     content.style.display = "none";
     bookDiv.style.height = height;
@@ -83,30 +77,47 @@ function createBookView(_a) {
     if (columns < 1) {
         throw Error("Invalid column count " + columns);
     }
-    (function () {
-        var children = container.children;
+    (() => {
+        const children = container.children;
         if (children.length != 1 && children[0] != content) {
             throw Error("Expecting content to be a direct and only child of container");
         }
     })();
-    var bookViewState = new BookState(columns, Array.from(content.children));
-    console.log(Array.from(content.children));
+    const bookViewState = new BookState(Array.from(content.children));
     function layoutContent() {
-        var node;
+        console.log("Laying out content");
+        let node;
         while ((node = bookViewState.popNextNode()) != undefined) {
-            var clonedNode = node.cloneNode(true);
+            const clonedNode = node.cloneNode(true);
             bookDiv.append(clonedNode);
             if (overflowsParent(bookDiv, clonedNode)) {
                 clonedNode.remove();
                 bookViewState.unPopNextNode();
+                let lastNotOverflowing = null;
+                for (const [element1, element2] of splitChild(bookViewState.remainingNodes[0].node)) {
+                    const clonedSplit = element1.cloneNode(true);
+                    bookDiv.append(clonedSplit);
+                    if (!overflowsParent(bookDiv, clonedSplit)) {
+                        lastNotOverflowing = [element1, element2];
+                        clonedSplit.remove();
+                        element1.remove();
+                        element2.remove();
+                    }
+                    else if (lastNotOverflowing != null) {
+                        clonedSplit.remove();
+                        bookViewState.addSplitNodeForward(lastNotOverflowing[0], lastNotOverflowing[1]);
+                        bookDiv.append(lastNotOverflowing[0]);
+                    }
+                }
                 return;
             }
         }
     }
     function layoutContentBackwards() {
-        var node;
+        console.log("Laying out content backwards");
+        let node;
         while ((node = bookViewState.popNextNodeBackwards()) != undefined) {
-            var clonedNode = node.cloneNode(true);
+            const clonedNode = node.cloneNode(true);
             bookDiv.insertBefore(clonedNode, bookDiv.firstChild);
             if (overflowsParent(bookDiv, bookDiv.lastChild)) {
                 clonedNode.remove();
@@ -116,21 +127,15 @@ function createBookView(_a) {
         }
     }
     function overflowsParent(parent, child) {
-        console.log(child);
-        console.log(parent);
-        console.log(child.offsetLeft, parent.offsetLeft, child.offsetWidth, parent.offsetWidth, child.offsetLeft - parent.offsetLeft, parent.offsetWidth - child.offsetWidth);
-        return (child.offsetTop - parent.offsetTop >
-            parent.offsetHeight - child.offsetHeight ||
-            child.offsetLeft - parent.offsetLeft >
-                parent.offsetWidth - child.offsetWidth + 100);
+        return (child.offsetTop - parent.offsetTop > parent.offsetHeight - child.offsetHeight ||
+            child.offsetLeft - parent.offsetLeft > parent.offsetWidth - child.offsetWidth + 100);
     }
     layoutContent();
     function containerClickHandler(event) {
-        var bounds = container.getBoundingClientRect();
-        var x = event.clientX - bounds.left;
-        var y = event.clientY - bounds.top;
-        var percentWidth = (x / container.offsetWidth) * 100;
-        console.log(bookViewState);
+        let bounds = container.getBoundingClientRect();
+        let x = event.clientX - bounds.left;
+        let y = event.clientY - bounds.top;
+        const percentWidth = (x / container.offsetWidth) * 100;
         if (percentWidth < 20.0 && !bookViewState.firstPage()) {
             doTurnPageBackwards();
         }
@@ -164,10 +169,78 @@ function createBookView(_a) {
         clearColumnHtml();
         layoutContent();
     }
-    // setInterval(() => {
-    //   doRelayoutCurrentPage();
-    // }, 1000);
-    return function () {
+    function* splitChild(element) {
+        const fullTextSize = element.textContent.length;
+        for (let splitPercent = 1; splitPercent < 100; splitPercent += 1) {
+            const textToFind = fullTextSize * (splitPercent / 100);
+            let currentText = 0;
+            let child;
+            for (const childIter of Array.from(element.childNodes)) {
+                currentText += childIter.textContent.length;
+                child = childIter;
+                if (currentText > textToFind) {
+                    break;
+                }
+            }
+            if (child == null) {
+                return;
+            }
+            switch (child.nodeType) {
+                case Node.ELEMENT_NODE:
+                    const lengthToFind = currentText - textToFind;
+                    let currentLength = 0;
+                    let foundChild;
+                    for (const c of Array.from(child.childNodes)) {
+                        foundChild = c;
+                        currentLength += c.textContent.length;
+                        if (currentLength > lengthToFind) {
+                            break;
+                        }
+                    }
+                    const holder1 = child.cloneNode();
+                    const holder2 = child.cloneNode();
+                    let appendingTo = holder1;
+                    for (const n of Array.from(child.childNodes)) {
+                        appendingTo.appendChild(n.cloneNode(true));
+                        if (n == foundChild) {
+                            appendingTo = holder2;
+                        }
+                    }
+                    yield [holder1, holder2];
+                    break;
+                case Node.TEXT_NODE:
+                    const text = child.textContent;
+                    let spaceIndex = 0;
+                    const findSpaceIndex = text.length - (currentText - textToFind);
+                    for (let i = 0; i < text.length; i++) {
+                        if (text[i] === " ") {
+                            spaceIndex = i;
+                        }
+                        if (i >= findSpaceIndex) {
+                            break;
+                        }
+                    }
+                    const element1 = document.createElement("p");
+                    element1.textContent = text.slice(0, spaceIndex);
+                    const element2 = document.createElement("p");
+                    element2.textContent = text.slice(spaceIndex + 1, text.length);
+                    yield [element1, element2];
+                    break;
+            }
+        }
+    }
+    function* stringSegmentsGenerator(text) {
+        const fragments = text.split(/[ ]+/);
+        for (const [leftStrings, rightStrings] of segmentsGenerator(fragments)) {
+            yield [leftStrings.join(" "), rightStrings.join(" ")];
+        }
+    }
+    function* segmentsGenerator(values) {
+        for (let i = 1; i < values.length; i++) {
+            yield [values.slice(0, i), values.slice(i)];
+        }
+    }
+    return () => {
         bookDiv.remove();
         container.removeEventListener("click", containerClickHandler);
         container.removeEventListener("keyup", containerKeyboardHandler);
