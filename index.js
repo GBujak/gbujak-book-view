@@ -15,24 +15,22 @@ class BookState {
         }
     }
     popNextNode() {
-        const node = this.remainingNodes.shift();
-        if (node != null) {
-            this.currentNodes.push(node);
-        }
-        return node === null || node === void 0 ? void 0 : node.node;
+        return this.remainingNodes.shift();
     }
-    unPopNextNode() {
-        this.remainingNodes.unshift(this.currentNodes.pop());
+    unPopNextNode(node) {
+        this.remainingNodes.unshift(node);
     }
     popNextNodeBackwards() {
-        const node = this.pastNodes.pop();
-        if (node != null) {
-            this.currentNodes.unshift(node);
-        }
-        return node === null || node === void 0 ? void 0 : node.node;
+        return this.pastNodes.pop();
     }
-    unPopNextNodeBackwards() {
-        this.pastNodes.push(this.currentNodes.shift());
+    unPopNextNodeBackwards(node) {
+        this.pastNodes.push(node);
+    }
+    addCurrentNode(node) {
+        this.currentNodes.push(node);
+    }
+    addCurrentNodeBackwards(node) {
+        this.currentNodes.unshift(node);
     }
     fistVisibleNode() {
         return this.currentNodes[0].node;
@@ -60,6 +58,14 @@ class BookState {
             originalNodeBeforeSplit: original,
         });
         this.remainingNodes.unshift({ node: toRemaining });
+    }
+    addSplitNodeBackwards(toPast, toCurrent, original) {
+        this.currentNodes.unshift({ node: toCurrent });
+        this.pastNodes.push({
+            node: toPast,
+            splitWithFollowingNode: true,
+            originalNodeBeforeSplit: original,
+        });
     }
     rejoinSplitNodes() {
         for (const arr of [this.pastNodes, this.remainingNodes]) {
@@ -107,20 +113,19 @@ function createBookView({ containerId, contentId, height, columns = 2, onNavigat
     })();
     const bookViewState = new BookState(Array.from(content.children));
     function layoutContent() {
-        console.log("Laying out content");
-        let node;
-        while ((node = bookViewState.popNextNode()) != undefined) {
-            console.log("popped");
-            const clonedNode = node.cloneNode(true);
+        let bookStateNode;
+        while ((bookStateNode = bookViewState.popNextNode()) != undefined) {
+            const clonedNode = bookStateNode.node.cloneNode(true);
             bookDiv.appendChild(clonedNode);
             if (overflowsParent(bookDiv, clonedNode)) {
                 clonedNode.remove();
-                const splitNodeInserted = tryPutSplitNode(node);
+                const splitNodeInserted = tryPutSplitNode(bookStateNode.node);
                 if (!splitNodeInserted) {
-                    bookViewState.unPopNextNode();
+                    bookViewState.unPopNextNode(bookStateNode);
                 }
                 return;
             }
+            bookViewState.addCurrentNode(bookStateNode);
         }
     }
     function tryPutSplitNode(node) {
@@ -146,17 +151,42 @@ function createBookView({ containerId, contentId, height, columns = 2, onNavigat
         return false;
     }
     function layoutContentBackwards() {
-        console.log("Laying out content backwards");
-        let node;
-        while ((node = bookViewState.popNextNodeBackwards()) != undefined) {
-            const clonedNode = node.cloneNode(true);
+        let bookStateNode;
+        while ((bookStateNode = bookViewState.popNextNodeBackwards()) != undefined) {
+            const clonedNode = bookStateNode.node.cloneNode(true);
             bookDiv.insertBefore(clonedNode, bookDiv.firstChild);
             if (overflowsParent(bookDiv, bookDiv.lastChild)) {
                 clonedNode.remove();
-                bookViewState.unPopNextNodeBackwards();
+                const splitNodeInserted = tryPutSplitNodeBackwards(bookStateNode.node);
+                if (!splitNodeInserted) {
+                    bookViewState.unPopNextNodeBackwards(bookStateNode);
+                }
                 return;
             }
+            bookViewState.addCurrentNodeBackwards(bookStateNode);
         }
+    }
+    function tryPutSplitNodeBackwards(node) {
+        let lastNonOverlapping = null;
+        for (const [beforeElement, afterElement] of splitChild(node, true)) {
+            bookDiv.insertBefore(afterElement, bookDiv.firstChild);
+            const overflows = overflowsParent(bookDiv, bookDiv.lastChild);
+            beforeElement.remove();
+            afterElement.remove();
+            if (!overflows) {
+                lastNonOverlapping = [beforeElement, afterElement];
+                continue;
+            }
+            if (lastNonOverlapping != null) {
+                bookDiv.insertBefore(lastNonOverlapping[1], bookDiv.firstChild);
+                bookViewState.addSplitNodeBackwards(lastNonOverlapping[0], lastNonOverlapping[1], node);
+                return true;
+            }
+            else {
+                return false;
+            }
+        }
+        return false;
     }
     function overflowsParent(parent, child) {
         return (child.offsetTop - parent.offsetTop > parent.offsetHeight - child.offsetHeight ||
@@ -164,6 +194,7 @@ function createBookView({ containerId, contentId, height, columns = 2, onNavigat
     }
     layoutContent();
     function containerClickHandler(event) {
+        console.log(bookViewState);
         let bounds = container.getBoundingClientRect();
         let x = event.clientX - bounds.left;
         let y = event.clientY - bounds.top;

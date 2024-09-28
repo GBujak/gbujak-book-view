@@ -40,28 +40,28 @@ class BookState {
     }
   }
 
-  popNextNode(): Node | undefined {
-    const node = this.remainingNodes.shift();
-    if (node != null) {
-      this.currentNodes.push(node);
-    }
-    return node?.node;
+  popNextNode(): BookStateNode | undefined {
+    return this.remainingNodes.shift();
   }
 
-  unPopNextNode() {
-    this.remainingNodes.unshift(this.currentNodes.pop());
+  unPopNextNode(node: BookStateNode) {
+    this.remainingNodes.unshift(node);
   }
 
-  popNextNodeBackwards(): Node | undefined {
-    const node = this.pastNodes.pop();
-    if (node != null) {
-      this.currentNodes.unshift(node);
-    }
-    return node?.node;
+  popNextNodeBackwards(): BookStateNode | undefined {
+    return this.pastNodes.pop();
   }
 
-  unPopNextNodeBackwards() {
-    this.pastNodes.push(this.currentNodes.shift());
+  unPopNextNodeBackwards(node: BookStateNode) {
+    this.pastNodes.push(node);
+  }
+
+  addCurrentNode(node: BookStateNode) {
+    this.currentNodes.push(node);
+  }
+
+  addCurrentNodeBackwards(node: BookStateNode) {
+    this.currentNodes.unshift(node);
   }
 
   fistVisibleNode(): Node | undefined {
@@ -95,6 +95,15 @@ class BookState {
       originalNodeBeforeSplit: original,
     });
     this.remainingNodes.unshift({ node: toRemaining });
+  }
+
+  addSplitNodeBackwards(toPast: Node, toCurrent: Node, original: Node) {
+    this.currentNodes.unshift({ node: toCurrent });
+    this.pastNodes.push({
+      node: toPast,
+      splitWithFollowingNode: true,
+      originalNodeBeforeSplit: original,
+    });
   }
 
   private rejoinSplitNodes() {
@@ -159,19 +168,21 @@ function createBookView({
   const bookViewState = new BookState(Array.from(content.children));
 
   function layoutContent() {
-    let node: Node | undefined;
-    while ((node = bookViewState.popNextNode()) != undefined) {
-      const clonedNode = node.cloneNode(true) as HTMLElement;
+    let bookStateNode: BookStateNode | undefined;
+    while ((bookStateNode = bookViewState.popNextNode()) != undefined) {
+      const clonedNode = bookStateNode.node.cloneNode(true) as HTMLElement;
       bookDiv.appendChild(clonedNode);
 
       if (overflowsParent(bookDiv, clonedNode)) {
         clonedNode.remove();
-        const splitNodeInserted = tryPutSplitNode(node as HTMLElement);
+        const splitNodeInserted = tryPutSplitNode(bookStateNode.node as HTMLElement);
         if (!splitNodeInserted) {
-          bookViewState.unPopNextNode();
+          bookViewState.unPopNextNode(bookStateNode);
         }
         return;
       }
+
+      bookViewState.addCurrentNode(bookStateNode);
     }
   }
 
@@ -200,18 +211,48 @@ function createBookView({
   }
 
   function layoutContentBackwards() {
-    console.log("Laying out content backwards");
-    let node: Node | undefined;
-    while ((node = bookViewState.popNextNodeBackwards()) != undefined) {
-      const clonedNode = node.cloneNode(true) as HTMLElement;
+    let bookStateNode: BookStateNode | undefined;
+    while ((bookStateNode = bookViewState.popNextNodeBackwards()) != undefined) {
+      const clonedNode = bookStateNode.node.cloneNode(true) as HTMLElement;
       bookDiv.insertBefore(clonedNode, bookDiv.firstChild);
 
       if (overflowsParent(bookDiv, bookDiv.lastChild as HTMLElement)) {
         clonedNode.remove();
-        bookViewState.unPopNextNodeBackwards();
+        const splitNodeInserted = tryPutSplitNodeBackwards(bookStateNode.node as HTMLElement);
+        if (!splitNodeInserted) {
+          bookViewState.unPopNextNodeBackwards(bookStateNode);
+        }
         return;
       }
+
+      bookViewState.addCurrentNodeBackwards(bookStateNode);
     }
+  }
+
+  function tryPutSplitNodeBackwards(node: HTMLElement): boolean {
+    let lastNonOverlapping: [Node, Node] | null = null;
+
+    for (const [beforeElement, afterElement] of splitChild(node, true)) {
+      bookDiv.insertBefore(afterElement, bookDiv.firstChild);
+      const overflows = overflowsParent(bookDiv, bookDiv.lastChild as HTMLElement);
+      beforeElement.remove();
+      afterElement.remove();
+
+      if (!overflows) {
+        lastNonOverlapping = [beforeElement, afterElement];
+        continue;
+      }
+
+      if (lastNonOverlapping != null) {
+        bookDiv.insertBefore(lastNonOverlapping[1], bookDiv.firstChild);
+        bookViewState.addSplitNodeBackwards(lastNonOverlapping[0], lastNonOverlapping[1], node);
+        return true;
+      } else {
+        return false;
+      }
+    }
+
+    return false;
   }
 
   function overflowsParent(parent: HTMLElement, child: HTMLElement) {
@@ -224,6 +265,8 @@ function createBookView({
   layoutContent();
 
   function containerClickHandler(event: MouseEvent) {
+    console.log(bookViewState);
+
     let bounds = container.getBoundingClientRect();
     let x = event.clientX - bounds.left;
     let y = event.clientY - bounds.top;
