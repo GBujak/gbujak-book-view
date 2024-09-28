@@ -53,9 +53,12 @@ class BookState {
     firstPage() {
         return this.pastNodes.length === 0;
     }
-    addSplitNodeForward(toCurrent, toRemaining) {
-        this.currentNodes.push({ node: toCurrent });
-        this.remainingNodes.shift();
+    addSplitNodeForward(toCurrent, toRemaining, original) {
+        this.currentNodes.push({
+            node: toCurrent,
+            splitWithFollowingNode: true,
+            originalNodeBeforeSplit: original,
+        });
         this.remainingNodes.unshift({ node: toRemaining });
     }
     rejoinSplitNodes() {
@@ -68,6 +71,9 @@ class BookState {
                 if (splitIndex + 1 < arr.length) {
                     arr.splice(splitIndex + 1, 1);
                     arr[splitIndex] = { node: arr[splitIndex].originalNodeBeforeSplit };
+                }
+                else {
+                    break;
                 }
             }
         }
@@ -104,30 +110,40 @@ function createBookView({ containerId, contentId, height, columns = 2, onNavigat
         console.log("Laying out content");
         let node;
         while ((node = bookViewState.popNextNode()) != undefined) {
+            console.log("popped");
             const clonedNode = node.cloneNode(true);
-            bookDiv.append(clonedNode);
+            bookDiv.appendChild(clonedNode);
             if (overflowsParent(bookDiv, clonedNode)) {
                 clonedNode.remove();
-                bookViewState.unPopNextNode();
-                let lastNotOverflowing = null;
-                for (const [element1, element2] of splitChild(bookViewState.remainingNodes[0].node)) {
-                    const clonedSplit = element1.cloneNode(true);
-                    bookDiv.append(clonedSplit);
-                    if (!overflowsParent(bookDiv, clonedSplit)) {
-                        lastNotOverflowing = [element1, element2];
-                        clonedSplit.remove();
-                        element1.remove();
-                        element2.remove();
-                    }
-                    else if (lastNotOverflowing != null) {
-                        clonedSplit.remove();
-                        bookViewState.addSplitNodeForward(lastNotOverflowing[0], lastNotOverflowing[1]);
-                        bookDiv.append(lastNotOverflowing[0]);
-                    }
+                const splitNodeInserted = tryPutSplitNode(node);
+                if (!splitNodeInserted) {
+                    bookViewState.unPopNextNode();
                 }
                 return;
             }
         }
+    }
+    function tryPutSplitNode(node) {
+        let lastNonOverlapping = null;
+        for (const [beforeElement, afterElement] of splitChild(node)) {
+            bookDiv.append(beforeElement);
+            const overflows = overflowsParent(bookDiv, beforeElement);
+            beforeElement.remove();
+            afterElement.remove();
+            if (!overflows) {
+                lastNonOverlapping = [beforeElement, afterElement];
+                continue;
+            }
+            if (lastNonOverlapping != null) {
+                bookDiv.append(lastNonOverlapping[0]);
+                bookViewState.addSplitNodeForward(lastNonOverlapping[0], lastNonOverlapping[1], node);
+                return true;
+            }
+            else {
+                return false;
+            }
+        }
+        return false;
     }
     function layoutContentBackwards() {
         console.log("Laying out content backwards");
@@ -169,11 +185,6 @@ function createBookView({ containerId, contentId, height, columns = 2, onNavigat
         bookViewState.turnPage();
         clearColumnHtml();
         layoutContent();
-        console.log({
-            past: bookViewState.pastNodes.filter((it) => it.splitWithFollowingNode).length,
-            current: bookViewState.currentNodes.filter((it) => it.splitWithFollowingNode).length,
-            remaining: bookViewState.remainingNodes.filter((it) => it.splitWithFollowingNode).length,
-        });
     }
     function doTurnPageBackwards() {
         bookViewState.turnPageBackwards();
