@@ -71,11 +71,13 @@ class BookState {
   turnPage() {
     this.pastNodes = [...this.pastNodes, ...this.currentNodes];
     this.currentNodes = [];
+    this.rejoinSplitNodes();
   }
 
   turnPageBackwards() {
     this.remainingNodes = [...this.currentNodes, ...this.remainingNodes];
     this.currentNodes = [];
+    this.rejoinSplitNodes();
   }
 
   lastPage() {
@@ -86,10 +88,26 @@ class BookState {
     return this.pastNodes.length === 0;
   }
 
-  addSplitNodeForward(toCurrent: Node, toRemaining: Node) {
+  addSplitNodeForward(toCurrent: Node, toRemaining: Node, original: Node) {
     this.currentNodes.push({ node: toCurrent });
     this.remainingNodes.shift();
     this.remainingNodes.unshift({ node: toRemaining });
+  }
+
+  private rejoinSplitNodes() {
+    for (const arr of [this.pastNodes, this.remainingNodes]) {
+      while (true) {
+        const splitIndex = arr.findIndex((node) => node.splitWithFollowingNode);
+        if (splitIndex === -1) {
+          break;
+        }
+
+        if (splitIndex + 1 < arr.length) {
+          arr.splice(splitIndex + 1, 1);
+          arr[splitIndex] = { node: arr[splitIndex].originalNodeBeforeSplit };
+        }
+      }
+    }
   }
 }
 
@@ -242,92 +260,109 @@ function createBookView({
     layoutContent();
   }
 
-  function* splitChild(element: HTMLElement): Generator<[Node, Node]> {
-    const fullTextSize = element.textContent.length;
-    for (let splitPercent = 1; splitPercent < 100; splitPercent += 1) {
-      const textToFind = fullTextSize * (splitPercent / 100);
-      let currentText = 0;
-      let child: Node;
-
-      for (const childIter of Array.from(element.childNodes)) {
-        currentText += childIter.textContent.length;
-        child = childIter;
-        if (currentText > textToFind) {
-          break;
-        }
+  function* iterIndex(length: number, reverse: boolean): Generator<number> {
+    if (reverse) {
+      for (let i = length - 1; i >= 0; i--) {
+        yield i;
       }
-
-      if (child == null) {
-        return;
+    } else {
+      for (let i = 0; i < length; i++) {
+        yield i;
       }
+    }
+  }
+
+  function* splitChild(element: HTMLElement, reverse: boolean = false): Generator<[Node, Node]> {
+    const children = Array.from(element.childNodes);
+
+    for (const i of iterIndex(children.length, reverse)) {
+      const child = children[i];
 
       switch (child.nodeType) {
         case Node.ELEMENT_NODE:
-          const lengthToFind = currentText - textToFind;
-          let currentLength = 0;
-          let foundChild: Node;
-
-          for (const c of Array.from(child.childNodes)) {
-            foundChild = c;
-            currentLength += c.textContent.length;
-            if (currentLength > lengthToFind) {
-              break;
+          for (const [nodesBefore, nodesAfter] of segmentsGenerator(
+            Array.from(child.childNodes),
+            reverse,
+          )) {
+            const element1 = child.cloneNode();
+            for (const node of [...children.slice(0, i), ...nodesBefore]) {
+              addConentToNode(element1, node);
             }
-          }
 
-          const holder1 = child.cloneNode();
-          const holder2 = child.cloneNode();
-
-          let appendingTo = holder1;
-
-          for (const n of Array.from(child.childNodes)) {
-            appendingTo.appendChild(n.cloneNode(true));
-            if (n == foundChild) {
-              appendingTo = holder2;
+            const element2 = child.cloneNode();
+            for (const node of [...children.slice(i + 1), ...nodesAfter]) {
+              addConentToNode(element2, node);
             }
+
+            yield [element1, element2];
           }
-
-          yield [holder1, holder2];
-
           break;
 
         case Node.TEXT_NODE:
-          const text = child.textContent;
-          let spaceIndex = 0;
-          const findSpaceIndex = text.length - (currentText - textToFind);
-          for (let i = 0; i < text.length; i++) {
-            if (text[i] === " ") {
-              spaceIndex = i;
+          for (const [textBefore, textAfter] of stringSegmentsGenerator(
+            child.textContent,
+            reverse,
+          )) {
+            const element1 = document.createElement("p");
+            for (const node of children.slice(0, i)) {
+              addConentToNode(element1, node);
             }
+            addTextToNode(element1, textBefore);
 
-            if (i >= findSpaceIndex) {
-              break;
+            const element2 = document.createElement("p");
+            for (const node of children.slice(i + 1)) {
+              addConentToNode(element2, node);
             }
+            addTextToNode(element2, textAfter);
+
+            yield [element1, element2];
           }
-
-          const element1 = document.createElement("p");
-          element1.textContent = text.slice(0, spaceIndex);
-          const element2 = document.createElement("p");
-          element2.textContent = text.slice(spaceIndex + 1, text.length);
-
-          yield [element1, element2];
-
           break;
       }
     }
   }
 
-  function* stringSegmentsGenerator(text: string): Generator<[string, string]> {
+  function* stringSegmentsGenerator(
+    text: string,
+    reverse: boolean = false,
+  ): Generator<[string, string]> {
     const fragments = text.split(/[ ]+/);
-    for (const [leftStrings, rightStrings] of segmentsGenerator(fragments)) {
+    for (const [leftStrings, rightStrings] of segmentsGenerator(fragments, reverse)) {
       yield [leftStrings.join(" "), rightStrings.join(" ")];
     }
   }
 
-  function* segmentsGenerator<T>(values: T[]): Generator<[T[], T[]]> {
-    for (let i = 1; i < values.length; i++) {
-      yield [values.slice(0, i), values.slice(i)];
+  function* segmentsGenerator<T>(values: T[], reverse: boolean = false): Generator<[T[], T[]]> {
+    if (reverse) {
+      for (let i = values.length - 1; i > 0; i--) {
+        yield [values.slice(0, i), values.slice(i)];
+      }
+    } else {
+      for (let i = 1; i < values.length; i++) {
+        yield [values.slice(0, i), values.slice(i)];
+      }
     }
+  }
+
+  function addConentToNode(parent: Node, content: Node) {
+    switch (content.nodeType) {
+      case Node.ELEMENT_NODE:
+        parent.appendChild(content);
+        break;
+
+      case Node.TEXT_NODE:
+        addTextToNode(parent, content.textContent);
+        break;
+
+      default:
+        break;
+    }
+  }
+
+  function addTextToNode(node: Node, textContent: string) {
+    const element = document.createElement("p");
+    element.textContent = textContent;
+    node.appendChild(element);
   }
 
   return () => {
