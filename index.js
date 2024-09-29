@@ -310,6 +310,20 @@ function createBookView({ containerId, contentId, height, columns = 2, onNavigat
                 break;
         }
     }
+    function getStringSegment(text, index, reverse = false) {
+        const fragments = text.split(/[ ]+/);
+        const result = getSegments(fragments, index, reverse);
+        return result.map((it) => it.join(" "));
+    }
+    function getSegments(values, index, reverse = false) {
+        const i = index + 1; // Make 0 index not have an empty array on any side
+        if (reverse) {
+            return [values.slice(0, values.length - i), values.slice(values.length - i)];
+        }
+        else {
+            return [values.slice(0, i), values.slice(i)];
+        }
+    }
     function addTextToNode(node, textContent) {
         const element = document.createElement("p");
         element.textContent = textContent;
