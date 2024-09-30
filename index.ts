@@ -187,27 +187,38 @@ function createBookView({
   }
 
   function tryPutSplitNode(node: HTMLElement): boolean {
-    let lastNonOverlapping: [Node, Node] | null = null;
-    for (const [beforeElement, afterElement] of splitChild(node)) {
-      bookDiv.append(beforeElement);
-      const overflows = overflowsParent(bookDiv, beforeElement);
-      beforeElement.remove();
-      afterElement.remove();
+    const result: [Node, Node] | undefined = binarySearchSplitChild({
+      child: node,
+      reverse: false,
+      check: ([[nBefore], [nPlusOneBefore]]): "left" | "right" | "done" => {
+        bookDiv.append(nBefore);
+        const nBeforeOverflows = overflowsParent(bookDiv, nBefore);
+        nBefore.remove();
 
-      if (!overflows) {
-        lastNonOverlapping = [beforeElement, afterElement];
-        continue;
-      }
+        if (nBeforeOverflows) {
+          return "left";
+        }
 
-      if (lastNonOverlapping != null) {
-        bookDiv.append(lastNonOverlapping[0]);
-        bookViewState.addSplitNodeForward(lastNonOverlapping[0], lastNonOverlapping[1], node);
-        return true;
-      } else {
-        return false;
-      }
+        bookDiv.append(nPlusOneBefore);
+        const nPlusOneBeforeOverflows = overflowsParent(bookDiv, nPlusOneBefore);
+        nPlusOneBefore.remove();
+
+        if (nPlusOneBeforeOverflows) {
+          return "done";
+        } else {
+          return "right";
+        }
+      },
+    });
+
+    if (result == undefined) {
+      return false;
+    } else {
+      const [before, after] = result;
+      bookViewState.addSplitNodeForward(before, after, node);
+      bookDiv.append(before);
+      return true;
     }
-    return false;
   }
 
   function layoutContentBackwards() {
@@ -230,29 +241,38 @@ function createBookView({
   }
 
   function tryPutSplitNodeBackwards(node: HTMLElement): boolean {
-    let lastNonOverlapping: [Node, Node] | null = null;
+    const result: [Node, Node] | undefined = binarySearchSplitChild({
+      child: node,
+      reverse: true,
+      check: ([[, nAfter], [, nMinusOneAfter]]): "left" | "right" | "done" => {
+        bookDiv.append(nAfter);
+        const nAfterOverflows = overflowsParent(bookDiv, nAfter);
+        nAfter.remove();
 
-    for (const [beforeElement, afterElement] of splitChild(node, true)) {
-      bookDiv.insertBefore(afterElement, bookDiv.firstChild);
-      const overflows = overflowsParent(bookDiv, bookDiv.lastChild as HTMLElement);
-      beforeElement.remove();
-      afterElement.remove();
+        if (nAfterOverflows) {
+          return "left";
+        }
 
-      if (!overflows) {
-        lastNonOverlapping = [beforeElement, afterElement];
-        continue;
-      }
+        bookDiv.append(nMinusOneAfter);
+        const nMinusOneAfterOverflows = overflowsParent(bookDiv, nMinusOneAfter);
+        nMinusOneAfter.remove();
 
-      if (lastNonOverlapping != null) {
-        bookDiv.insertBefore(lastNonOverlapping[1], bookDiv.firstChild);
-        bookViewState.addSplitNodeBackwards(lastNonOverlapping[0], lastNonOverlapping[1], node);
-        return true;
-      } else {
-        return false;
-      }
+        if (nMinusOneAfterOverflows) {
+          return "done";
+        } else {
+          return "right";
+        }
+      },
+    });
+
+    if (result == undefined) {
+      return false;
+    } else {
+      const [before, after] = result;
+      bookViewState.addSplitNodeBackwards(before, after, node);
+      bookDiv.insertBefore(after, node.firstChild);
+      return true;
     }
-
-    return false;
   }
 
   function overflowsParent(parent: HTMLElement, child: HTMLElement) {
@@ -315,139 +335,88 @@ function createBookView({
     layoutContent();
   }
 
-  function* iterIndex(length: number, reverse: boolean): Generator<number> {
-    if (reverse) {
-      for (let i = length - 1; i >= 0; i--) {
-        yield i;
-      }
-    } else {
-      for (let i = 0; i < length; i++) {
-        yield i;
-      }
-    }
-  }
-
-  function* splitChild(
-    element: HTMLElement,
-    reverse: boolean = false,
-  ): Generator<[HTMLElement, HTMLElement]> {
-    const children = Array.from(element.childNodes);
-
-    for (const i of iterIndex(children.length, reverse)) {
-      const child = children[i];
-
-      switch (child.nodeType) {
-        case Node.ELEMENT_NODE:
-          for (const [nodesBefore, nodesAfter] of segmentsGenerator(
-            Array.from(child.childNodes),
-            reverse,
-          )) {
-            const element1 = child.cloneNode();
-            for (const node of [...children.slice(0, i), ...nodesBefore]) {
-              addConentToNode(element1, node);
-            }
-
-            const element2 = child.cloneNode();
-            for (const node of [...children.slice(i + 1), ...nodesAfter]) {
-              addConentToNode(element2, node);
-            }
-
-            yield [element1 as HTMLElement, element2 as HTMLElement];
-          }
-          break;
-
-        case Node.TEXT_NODE:
-          for (const [textBefore, textAfter] of stringSegmentsGenerator(
-            child.textContent,
-            reverse,
-          )) {
-            const element1 = document.createElement("p");
-            for (const node of children.slice(0, i)) {
-              addConentToNode(element1, node);
-            }
-            addTextToNode(element1, textBefore);
-
-            const element2 = document.createElement("p");
-            for (const node of children.slice(i + 1)) {
-              addConentToNode(element2, node);
-            }
-            addTextToNode(element2, textAfter);
-
-            yield [element1, element2];
-          }
-          break;
-      }
-    }
-  }
-
-  function* stringSegmentsGenerator(
-    text: string,
-    reverse: boolean = false,
-  ): Generator<[string, string]> {
-    const fragments = text.split(/[ ]+/);
-    for (const [leftStrings, rightStrings] of segmentsGenerator(fragments, reverse)) {
-      yield [leftStrings.join(" "), rightStrings.join(" ")];
-    }
-  }
-
-  function* segmentsGenerator<T>(values: T[], reverse: boolean = false): Generator<[T[], T[]]> {
-    if (reverse) {
-      for (let i = values.length - 1; i > 0; i--) {
-        yield [values.slice(0, i), values.slice(i)];
-      }
-    } else {
-      for (let i = 1; i < values.length; i++) {
-        yield [values.slice(0, i), values.slice(i)];
-      }
-    }
-  }
-
-  function addConentToNode(parent: Node, content: Node) {
-    switch (content.nodeType) {
-      case Node.ELEMENT_NODE:
-        parent.appendChild(content);
-        break;
-
-      case Node.TEXT_NODE:
-        addTextToNode(parent, content.textContent);
-        break;
-
-      default:
-        break;
-    }
-  }
-
-  function binarySearchStringSegments({
-    text,
+  function binarySearchSplitChild({
+    child,
     reverse = false,
     check,
   }: {
-    text: string;
+    child: Node;
     reverse?: boolean;
-    check: (values: [[string, string], [string, string]]) => "left" | "right" | "done";
-  }): [string, string] | undefined {
+    check: (
+      values: [[HTMLElement, HTMLElement], [HTMLElement, HTMLElement]],
+    ) => "left" | "right" | "done";
+  }): [Node, Node] | undefined {
+    switch (child.nodeType) {
+      case Node.ELEMENT_NODE:
+        return binarySearchNodeSegments(child, check, reverse);
+
+      case Node.TEXT_NODE:
+        return binarySearchStringSegments(child.textContent, check, reverse);
+    }
+    return undefined;
+  }
+
+  function binarySearchStringSegments(
+    text: string,
+    check: (values: [[Node, Node], [Node, Node]]) => "left" | "right" | "done",
+    reverse: boolean = false,
+  ): [Node, Node] | undefined {
     return binarySearch(
       text.split(/[ ]+/).length,
-      (index) => [
-        getStringSegment(text, index, reverse),
-        getStringSegment(text, index + 1, reverse),
-      ],
+      (index): [[Node, Node], [Node, Node]] => {
+        const [a, b] = getStringSegment(text, index, reverse);
+        const [c, d] = getStringSegment(text, index + 1, reverse);
+
+        const aNode = document.createElement("p");
+        aNode.append(...a);
+
+        const bNode = document.createElement("p");
+        bNode.append(...b);
+
+        const cNode = document.createElement("p");
+        cNode.append(...c);
+
+        const dNode = document.createElement("p");
+        dNode.append(...d);
+
+        return [
+          [aNode, bNode],
+          [cNode, dNode],
+        ];
+      },
       check,
     )[0];
   }
 
-  function binarySearchNodeSegments({
-    nodes,
-    reverse = false,
-    check,
-  }: {
-    nodes: Node[];
-    reverse?: boolean;
-    check: (values: [[Node[], Node[]], [Node[], Node[]]]) => "left" | "right" | "done";
-  }): [Node[], Node[]] | undefined {
+  function binarySearchNodeSegments(
+    node: Node,
+    check: (values: [[Node, Node], [Node, Node]]) => "left" | "right" | "done",
+    reverse: boolean = false,
+  ): [Node, Node] | undefined {
+    const childNodes = Array.from(node.childNodes);
     return binarySearch(
-      nodes.length,
-      (index) => [getSegments(nodes, index, reverse), getSegments(nodes, index + 1, reverse)],
+      node.childNodes.length,
+      (index): [[Node, Node], [Node, Node]] => {
+        const [a, b] = getSegments(childNodes, index, reverse);
+        const [c, d] = getSegments(childNodes, index + 1, reverse);
+
+        const aNode = node.cloneNode() as HTMLElement;
+        aNode.append(...a);
+
+        const bNode = node.cloneNode() as HTMLElement;
+        bNode.append(...b);
+
+        const cNode = node.cloneNode() as HTMLElement;
+        cNode.append(...c);
+
+        const dNode = node.cloneNode() as HTMLElement;
+        dNode.append(...d);
+
+        return [
+          [aNode, bNode],
+          [cNode, dNode],
+        ];
+      },
       check,
     )[0];
   }
