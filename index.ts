@@ -188,7 +188,10 @@ function createBookView({
 
   function tryPutSplitNode(node: HTMLElement): boolean {
     let lastNonOverlapping: [Node, Node] | null = null;
+    console.log("trying to splie");
     for (const [beforeElement, afterElement] of splitChild(node)) {
+      console.log({ beforeElement, afterElement });
+
       bookDiv.append(beforeElement);
       const overflows = overflowsParent(bookDiv, beforeElement);
       beforeElement.remove();
@@ -265,8 +268,6 @@ function createBookView({
   layoutContent();
 
   function containerClickHandler(event: MouseEvent) {
-    console.log(bookViewState);
-
     let bounds = container.getBoundingClientRect();
     let x = event.clientX - bounds.left;
     let y = event.clientY - bounds.top;
