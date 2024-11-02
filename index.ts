@@ -9,15 +9,15 @@ interface Props {
 type BookStateNode = {
   node: Node;
 } & (
-  | {
+    | {
       splitWithFollowingNode?: false;
       originalNodeBeforeSplit?: never;
     }
-  | {
+    | {
       splitWithFollowingNode: true;
       originalNodeBeforeSplit: Node;
     }
-);
+  );
 
 class BookState {
   public pastNodes: BookStateNode[];
@@ -130,7 +130,7 @@ function createBookView({
   contentId,
   height,
   columns = 2,
-  onNavigateOffFinalPage = () => {},
+  onNavigateOffFinalPage = () => { },
 }: Props) {
   const container = document.getElementById(containerId);
   const content = document.getElementById(contentId);
@@ -287,7 +287,7 @@ function createBookView({
     bookDiv.innerHTML = "";
   }
 
-  function containerKeyboardHandler(event: KeyboardEvent) {}
+  function containerKeyboardHandler(event: KeyboardEvent) { }
 
   container.addEventListener("click", containerClickHandler);
   container.addEventListener("keyup", containerKeyboardHandler);
